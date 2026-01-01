@@ -745,9 +745,16 @@ crypto.generateRecoveryKey = function() {
 
 
 crypto.deriveExportKey = async function(recoveryKey, salt) {
+    if (!recoveryKey || typeof recoveryKey !== 'string') {
+        throw new Error('Recovery key must be a non-empty string');
+    }
+    
     const encoder = new TextEncoder();
     const recoveryKeyBuffer = encoder.encode(recoveryKey);
     
+    if (recoveryKeyBuffer.length === 0) {
+        throw new Error('Recovery key cannot be empty');
+    }
 
     const baseKey = await window.crypto.subtle.importKey(
         'raw',
@@ -840,10 +847,28 @@ crypto.encryptSeedWithRecoveryKey = async function(recoveryKey, seedData, metada
 
 
 crypto.decryptSeedWithRecoveryKey = async function(recoveryKey, encryptedData) {
+    if (!recoveryKey || typeof recoveryKey !== 'string') {
+        throw new Error('Recovery key must be a non-empty string');
+    }
+    
+    recoveryKey = recoveryKey.trim().replace(/\s+/g, '');
+    
+    if (recoveryKey.length === 0) {
+        throw new Error('Recovery key cannot be empty');
+    }
+    
     const { salt, iv, ciphertext, kdf, encryption } = encryptedData;
     
 
-    const saltBuffer = Uint8Array.from(atob(salt.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+    let saltBase64 = salt.replace(/-/g, '+').replace(/_/g, '/');
+    while (saltBase64.length % 4 !== 0) {
+        saltBase64 += '=';
+    }
+    const saltBinary = atob(saltBase64);
+    const saltBuffer = new Uint8Array(saltBinary.length);
+    for (let i = 0; i < saltBinary.length; i++) {
+        saltBuffer[i] = saltBinary.charCodeAt(i);
+    }
     const exportKey = await this.deriveExportKey(recoveryKey, saltBuffer);
     
     const encoder = new TextEncoder();
@@ -858,26 +883,54 @@ crypto.decryptSeedWithRecoveryKey = async function(recoveryKey, encryptedData) {
         salt: salt,
         alg: encryption.algorithm
     };
+    
+    if (!kdf || !encryption || !salt || !iv || !ciphertext) {
+        throw new Error('Missing required encryption parameters');
+    }
     const aadString = JSON.stringify(aadObject);
     const aadBuffer = encoder.encode(aadString);
     
 
-    const ivBuffer = Uint8Array.from(atob(iv.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
-    const ciphertextBuffer = Uint8Array.from(atob(ciphertext.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+    let ivBase64 = iv.replace(/-/g, '+').replace(/_/g, '/');
+    while (ivBase64.length % 4 !== 0) {
+        ivBase64 += '=';
+    }
+    const ivBinary = atob(ivBase64);
+    const ivBuffer = new Uint8Array(ivBinary.length);
+    for (let i = 0; i < ivBinary.length; i++) {
+        ivBuffer[i] = ivBinary.charCodeAt(i);
+    }
+    
+    let ciphertextBase64 = ciphertext.replace(/-/g, '+').replace(/_/g, '/');
+    while (ciphertextBase64.length % 4 !== 0) {
+        ciphertextBase64 += '=';
+    }
+    const ciphertextBinary = atob(ciphertextBase64);
+    const ciphertextBuffer = new Uint8Array(ciphertextBinary.length);
+    for (let i = 0; i < ciphertextBinary.length; i++) {
+        ciphertextBuffer[i] = ciphertextBinary.charCodeAt(i);
+    }
     
 
-    const plaintextBuffer = await window.crypto.subtle.decrypt(
-        {
-            name: 'AES-GCM',
-            iv: ivBuffer,
-            additionalData: aadBuffer
-        },
-        exportKey,
-        ciphertextBuffer
-    );
-    
+    try {
+        const plaintextBuffer = await window.crypto.subtle.decrypt(
+            {
+                name: 'AES-GCM',
+                iv: ivBuffer,
+                additionalData: aadBuffer
+            },
+            exportKey,
+            ciphertextBuffer
+        );
+        
 
-    const seedData = JSON.parse(decoder.decode(plaintextBuffer));
-    return seedData;
+        const seedData = JSON.parse(decoder.decode(plaintextBuffer));
+        return seedData;
+    } catch (error) {
+        if (error.name === 'OperationError') {
+            throw new Error('Decryption failed: The seed lock string is incorrect, or the encrypted data has been corrupted. Please verify you are using the correct seed lock string that was shown when you exported the account.');
+        }
+        throw error;
+    }
 }
 

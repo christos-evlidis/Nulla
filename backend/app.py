@@ -6,6 +6,7 @@ from flask_cors import CORS
 from flask_sock import Sock
 import os
 from datetime import datetime, timedelta, timezone
+import time
 import secrets
 import json
 import base64
@@ -83,8 +84,14 @@ class Message(db.Model):
     encryptedMetadataIv = db.Column(db.String(64), nullable=True)
 
 
-
-challenges = {}
+class Nonce(db.Model):
+    
+    __tablename__ = 'nonces'
+    
+    nonce = db.Column(db.String(255), primary_key=True)
+    userId = db.Column(db.String(255), db.ForeignKey('users.userId', ondelete='CASCADE'), nullable=False, index=True)
+    expiresAt = db.Column(db.BigInteger, nullable=False, index=True)
+    createdAt = db.Column(db.BigInteger, nullable=False, default=lambda: int(time.time() * 1000))
 
 
 JWT_SECRET = app.config['SECRET_KEY']
@@ -239,24 +246,26 @@ def auth_challenge():
             return jsonify({'error': 'User not found'}), 404
         
 
+        cleanup_old_nonces()
+        
+
         nonce = secrets.token_urlsafe(32)
+        created_at_ms = int(time.time() * 1000)
+        expires_at_ms = created_at_ms + (30 * 60 * 1000)
         
-
-        expires_at = datetime.now(timezone.utc) + timedelta(minutes=2)
-        challenges[nonce] = {
-            'userId': userId,
-            'expires_at': expires_at
-        }
-        
-
-        now = datetime.now(timezone.utc)
-        expired_nonces = [n for n, c in challenges.items() if c['expires_at'] < now]
-        for n in expired_nonces:
-            del challenges[n]
+        nonce_record = Nonce(
+            nonce=nonce,
+            userId=userId,
+            expiresAt=expires_at_ms,
+            createdAt=created_at_ms
+        )
+        db.session.add(nonce_record)
+        db.session.commit()
         
         return jsonify({'nonce': nonce})
     
     except Exception as e:
+        db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
 
@@ -276,15 +285,18 @@ def auth_verify():
             return jsonify({'error': 'Missing required fields'}), 400
         
 
-        challenge = challenges.get(nonce)
-        if not challenge:
+        nonce_record = Nonce.query.filter_by(nonce=nonce).first()
+        if not nonce_record:
             return jsonify({'error': 'Invalid or expired challenge'}), 400
         
-        if challenge['userId'] != userId:
+        if nonce_record.userId != userId:
             return jsonify({'error': 'Challenge userId mismatch'}), 400
         
-        if challenge['expires_at'] < datetime.now(timezone.utc):
-            del challenges[nonce]
+        now_ms = int(time.time() * 1000)
+        
+        if nonce_record.expiresAt < now_ms:
+            db.session.delete(nonce_record)
+            db.session.commit()
             return jsonify({'error': 'Challenge expired'}), 400
         
 
@@ -300,7 +312,8 @@ def auth_verify():
             return jsonify({'error': 'Invalid signature'}), 401
         
 
-        del challenges[nonce]
+        db.session.delete(nonce_record)
+        db.session.commit()
         
 
         token = jwt.encode(
@@ -315,6 +328,7 @@ def auth_verify():
         return jsonify({'token': token})
     
     except Exception as e:
+        db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
 
@@ -1391,9 +1405,8 @@ def delete_account():
             del active_connections[userId]
         
 
-        challenges_to_remove = [nonce for nonce, (uid, _) in challenges.items() if uid == userId]
-        for nonce in challenges_to_remove:
-            del challenges[nonce]
+        Nonce.query.filter_by(userId=userId).delete()
+        db.session.commit()
         
         return jsonify({
             'ok': True,
@@ -1410,6 +1423,20 @@ def cleanup_old_messages():
     try:
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=30)
         deleted_count = Message.query.filter(Message.timestamp < cutoff_date).delete()
+        db.session.commit()
+        return deleted_count
+    except Exception as e:
+        db.session.rollback()
+        return 0
+
+
+def cleanup_old_nonces():
+    
+    try:
+        now_ms = int(time.time() * 1000)
+        cutoff_ms = now_ms - (30 * 60 * 1000)
+        
+        deleted_count = Nonce.query.filter(Nonce.expiresAt < cutoff_ms).delete()
         db.session.commit()
         return deleted_count
     except Exception as e:
@@ -1441,6 +1468,7 @@ if __name__ == '__main__':
         db.create_all()
 
         cleanup_old_messages()
+        cleanup_old_nonces()
     host = os.environ.get('FLASK_HOST', '0.0.0.0')
     port = int(os.environ.get('PORT', os.environ.get('FLASK_PORT', '3000')))
     app.run(debug=False, host=host, port=port)
