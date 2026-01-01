@@ -495,7 +495,13 @@ storage.importAll = async function(recoveryKey, fileContent) {
                 ciphertext: exportPackage.encryption.ciphertext
             };
             
-            const allData = await crypto.decryptSeedWithRecoveryKey(recoveryKey, encryptedData);
+            let allData;
+            try {
+                allData = await crypto.decryptSeedWithRecoveryKey(recoveryKey, encryptedData);
+            } catch (decryptError) {
+                const decryptErrorMessage = decryptError?.message || decryptError?.name || decryptError?.toString() || 'Decryption failed';
+                throw new Error('Failed to decrypt backup: ' + decryptErrorMessage + '. The seed lock string may be incorrect.');
+            }
             
 
             if (!allData.account || !allData.account.userId) {
@@ -596,7 +602,8 @@ storage.importAll = async function(recoveryKey, fileContent) {
             
             resolve();
         } catch (error) {
-            reject(error);
+            const errorMessage = error?.message || error?.name || error?.toString() || 'Unknown error';
+            reject(new Error(errorMessage));
         }
     });
 }

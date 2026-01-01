@@ -2419,6 +2419,7 @@ async function handleExportSeed() {
             throw new Error('generateRecoveryKey function not available. Please refresh the page.');
         }
         const recoveryKey = crypto.generateRecoveryKey();
+        console.log('Recovery Key (Seed Lock String):', recoveryKey);
         
 
         const recoveryKeyMessage = `Write down the seed lock string below, you will need it to import your account seed later and decrypt your data. Without it, you cannot recover your account after logging out.\n\nSeed Lock String:\n${recoveryKey}\n\nContinue only if you have saved the seed lock string.`;
@@ -2522,7 +2523,7 @@ async function handleImportAccount() {
         if (importAccountBtn) {
             importAccountBtn.textContent = 'Waiting for seed lock string...';
         }
-        const seedLockString = prompt('Enter the seed lock string to decrypt the backup:');
+        let seedLockString = prompt('Enter the seed lock string to decrypt the backup:');
         if (!seedLockString) {
             if (importAccountBtn) {
                 importAccountBtn.disabled = false;
@@ -2530,26 +2531,23 @@ async function handleImportAccount() {
             }
             return;
         }
+        seedLockString = seedLockString.trim();
         
 
         if (importAccountBtn) {
-            importAccountBtn.textContent = 'Decrypting...';
+            importAccountBtn.textContent = 'Validating file...';
         }
         
-        let decryptedData;
         try {
             const exportPackage = JSON.parse(fileContent);
-            const encryptedData = {
-                version: exportPackage.version,
-                kdf: exportPackage.kdf,
-                encryption: exportPackage.encryption,
-                salt: exportPackage.kdf.salt,
-                iv: exportPackage.encryption.iv,
-                ciphertext: exportPackage.encryption.ciphertext
-            };
-            decryptedData = await crypto.decryptSeedWithRecoveryKey(seedLockString, encryptedData);
+            if (!exportPackage.version || !exportPackage.kdf || !exportPackage.encryption) {
+                throw new Error('Invalid export file format');
+            }
+            if (!exportPackage.kdf.salt || !exportPackage.encryption.iv || !exportPackage.encryption.ciphertext) {
+                throw new Error('Invalid export file format: missing required fields');
+            }
         } catch (error) {
-            alert('Failed to decrypt backup. The seed lock string may be incorrect or the file may be corrupted.');
+            alert('Failed to validate backup file: ' + (error.message || 'Invalid file format'));
             if (importAccountBtn) {
                 importAccountBtn.disabled = false;
                 importAccountBtn.textContent = 'Import account';
@@ -2575,14 +2573,23 @@ async function handleImportAccount() {
         if (importAccountBtn) {
             importAccountBtn.textContent = 'Importing...';
         }
-        await storage.importAll(seedLockString, fileContent);
         
-
-        alert('Account imported successfully! The page will reload.');
-        window.location.reload();
+        try {
+            await storage.importAll(seedLockString, fileContent);
+            alert('Account imported successfully! The page will reload.');
+            window.location.reload();
+        } catch (error) {
+            const errorMessage = error?.message || error?.name || error?.toString() || 'Unknown error';
+            alert('Failed to import account: ' + errorMessage + '\n\nThe seed lock string may be incorrect or the file may be corrupted.');
+            if (importAccountBtn) {
+                importAccountBtn.disabled = false;
+                importAccountBtn.textContent = 'Import account';
+            }
+            return;
+        }
         
     } catch (error) {
-alert('Failed to import account: ' + (error.message || 'Unknown error'));
+        alert('Failed to import account: ' + (error.message || 'Unknown error'));
         if (importAccountBtn) {
             importAccountBtn.disabled = false;
             importAccountBtn.textContent = 'Import account';
