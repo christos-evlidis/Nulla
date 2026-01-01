@@ -5,7 +5,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from flask_sock import Sock
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import secrets
 import json
 import base64
@@ -74,7 +74,7 @@ class Message(db.Model):
     chatId = db.Column(db.String(512), db.ForeignKey('chats.chatId', ondelete='CASCADE'), nullable=False, index=True)
     sessionId = db.Column(db.String(255), nullable=False, index=True)
     senderId = db.Column(db.String(255), db.ForeignKey('users.userId', ondelete='CASCADE'), nullable=False)
-    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    timestamp = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
     ciphertext = db.Column(db.Text, nullable=False)
     iv = db.Column(db.String(64), nullable=False)
     ciphertext_len = db.Column(db.Integer, nullable=True)
@@ -201,7 +201,7 @@ def register():
             userId=userId,
             signPublicKeyJwk=json.dumps(signPublicKeyJwk),
             dhPublicKeyJwk=json.dumps(dhPublicKeyJwk),
-            createdAt=datetime.utcnow()
+            createdAt=datetime.now(timezone.utc)
         )
         
         db.session.add(user)
@@ -242,14 +242,14 @@ def auth_challenge():
         nonce = secrets.token_urlsafe(32)
         
 
-        expires_at = datetime.utcnow() + timedelta(minutes=2)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=2)
         challenges[nonce] = {
             'userId': userId,
             'expires_at': expires_at
         }
         
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         expired_nonces = [n for n, c in challenges.items() if c['expires_at'] < now]
         for n in expired_nonces:
             del challenges[n]
@@ -283,7 +283,7 @@ def auth_verify():
         if challenge['userId'] != userId:
             return jsonify({'error': 'Challenge userId mismatch'}), 400
         
-        if challenge['expires_at'] < datetime.utcnow():
+        if challenge['expires_at'] < datetime.now(timezone.utc):
             del challenges[nonce]
             return jsonify({'error': 'Challenge expired'}), 400
         
@@ -306,7 +306,7 @@ def auth_verify():
         token = jwt.encode(
             {
                 'userId': userId,
-                'exp': datetime.utcnow() + TOKEN_EXPIRY
+                'exp': datetime.now(timezone.utc) + TOKEN_EXPIRY
             },
             JWT_SECRET,
             algorithm=JWT_ALGORITHM
@@ -335,7 +335,7 @@ def create_chat_and_delete_requests(userA, userB, request1, request2=None):
             chatId=chatId,
             userA=sorted_users[0],
             userB=sorted_users[1],
-            createdAt=datetime.utcnow()
+            createdAt=datetime.now(timezone.utc)
         )
         db.session.add(chat)
     
@@ -421,7 +421,7 @@ def send_contact_request():
             fromUserId=fromUserId,
             toUserId=toUserId,
             status='pending',
-            createdAt=datetime.utcnow()
+            createdAt=datetime.now(timezone.utc)
         )
         
         db.session.add(contact_request)
@@ -873,7 +873,7 @@ def handle_contact_request_response_ws(ws, userId, data):
             }))
     else:
         contact_request.status = 'rejected'
-        contact_request.respondedAt = datetime.utcnow()
+        contact_request.respondedAt = datetime.now(timezone.utc)
         db.session.commit()
         
 
@@ -1261,7 +1261,7 @@ def handle_send_message_ws(ws, userId, data):
             chatId=chatId,
             sessionId=sessionId,
             senderId=userId,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             ciphertext=encryptedMessage.get('ciphertext', ''),
             iv=encryptedMessage.get('iv', ''),
             ciphertext_len=len(encryptedMessage.get('ciphertext', '')) if encryptedMessage.get('ciphertext') else None,
@@ -1408,7 +1408,7 @@ def delete_account():
 def cleanup_old_messages():
     
     try:
-        cutoff_date = datetime.utcnow() - timedelta(days=30)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=30)
         deleted_count = Message.query.filter(Message.timestamp < cutoff_date).delete()
         db.session.commit()
         return deleted_count
@@ -1442,5 +1442,5 @@ if __name__ == '__main__':
 
         cleanup_old_messages()
     host = os.environ.get('FLASK_HOST', '0.0.0.0')
-    port = int(os.environ.get('FLASK_PORT', '3000'))
+    port = int(os.environ.get('PORT', os.environ.get('FLASK_PORT', '3000')))
     app.run(debug=False, host=host, port=port)
