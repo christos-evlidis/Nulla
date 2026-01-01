@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>nulla</title>
+    <link rel="icon" type="image/x-icon" href="icons/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="icons/favicon.svg">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <link rel="manifest" href="manifest/manifest.json">
+    <meta name="theme-color" content="#000000">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+    
+    <div id="connection-lost-overlay" class="connection-lost-overlay hidden">
+        <div class="connection-lost-box box">
+            <h3 class="box-title">Connection Lost</h3>
+            <p class="box-description">The connection to the server has been lost. Please reload the page to reconnect.</p>
+        </div>
+    </div>
+
+    
+    <div id="landing-page" class="landing-page">
+        <div class="landing-content">
+            <div class="title-wrapper">
+                <h1 style="font-weight: bold; font-size: 90px; margin-bottom: -40px;">nulla</h1>
+            </div>
+            <div class="button-wrapper">
+                <button id="sign-up-btn" class="btn btn-primary btn-large">sign up</button>
+                <button id="landing-import-seed-btn" class="box-button" style="margin-top: 2px; font-style: italic;">Import seed</button>
+                <div id="title-hover-text" class="hover-text"></div>
+                <div id="third-hover-text" class="hover-text"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container hidden">
+        
+        <nav class="main-nav">
+            <div class="nav-content">
+                <div class="nav-title-wrapper">
+                    <h1 class="nav-title">nulla</h1>
+                    <div id="nav-title-hover-text" class="nav-hover-text"></div>
+                </div>
+                <div class="nav-links">
+                    <a href="#" class="nav-link active" data-view="main">Home</a>
+                    <a href="#" class="nav-link" data-view="contacts" id="contacts-link">Contacts</a>
+                    <a href="#" class="nav-link" data-view="settings">Settings</a>
+                    <a href="#" id="logout-link" class="nav-link">
+                        Logout
+                        <div id="logout-tooltip" class="logout-tooltip">
+                            WARNING: If you have not exported your account seed, you will lose access to your account forever. This action cannot be undone.
+                            <button id="export-seed-btn" class="export-seed-btn">Export seed</button>
+                        </div>
+                    </a>
+                </div>
+            </div>
+        </nav>
+        
+        
+        <div id="main-view" class="view">
+            
+            <div id="welcome-section" class="hero-section">
+                <h1 class="hero-title">Welcome to Nulla</h1>
+                <p class="hero-description">Communication without profiles or names.</p>
+            </div>
+            
+            <div class="boxes-section">
+                <div class="box">
+                    <h3 class="box-title">How to use service</h3>
+                    <p class="box-description">Copy your identifier and share it with others to receive contact requests. Accept requests to start encrypted conversations.</p>
+                    <button class="box-button" id="main-add-contact-btn">Add contact</button>
+                </div>
+                <div class="box">
+                    <h3 class="box-title">How we protect you</h3>
+                    <p class="box-description">We use an authenticated Diffie–Hellman key exchange to establish fully encrypted sessions. Only you and your contact can read each other's messages.</p>
+                    <button class="box-button">Learn more</button>
+                </div>
+                <div class="box">
+                    <h3 class="box-title">About the account seed</h3>
+                    <p class="box-description">Your presence in Nulla originates from a single cryptographic seed. It defines your identity. The seed exists only on your device.</p>
+                    <button class="box-button" id="main-export-seed-btn">Export seed</button>
+                </div>
+            </div>
+            
+            <div id="has-account">
+            </div>
+        </div>
+
+        
+        <div id="contacts-view" class="view hidden">
+            <div class="contacts-content">
+                <div class="contacts-boxes-section">
+                    <div class="box">
+                        <h3 class="box-title">Your contact string</h3>
+                        <p class="box-description">Share your identifier with others so they can send you contact requests. Your identifier is unique to your account and allows others to find and contact you.</p>
+                        <div class="identifier-display">
+                            <div class="contacts-identifier-wrapper">
+                                <input type="text" id="contacts-identifier" class="contacts-identifier-input" readonly>
+                                <button id="contacts-copy-btn" class="contacts-copy-btn" title="Copy identifier">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" class="copy-icon">
+                                        <path d="M480 400L288 400C279.2 400 272 392.8 272 384L272 128C272 119.2 279.2 112 288 112L421.5 112C425.7 112 429.8 113.7 432.8 116.7L491.3 175.2C494.3 178.2 496 182.3 496 186.5L496 384C496 392.8 488.8 400 480 400zM288 448L480 448C515.3 448 544 419.3 544 384L544 186.5C544 169.5 537.3 153.2 525.3 141.2L466.7 82.7C454.7 70.7 438.5 64 421.5 64L288 64C252.7 64 224 92.7 224 128L224 384C224 419.3 252.7 448 288 448zM160 192C124.7 192 96 220.7 96 256L96 512C96 547.3 124.7 576 160 576L352 576C387.3 576 416 547.3 416 512L416 496L368 496L368 512C368 520.8 360.8 528 352 528L160 528C151.2 528 144 520.8 144 512L144 256C144 247.2 151.2 240 160 240L176 240L176 192L160 192z"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="box">
+                        <h3 class="box-title">Add contact</h3>
+                        <p class="box-description">Enter someone's contact string to send them a contact request. Once they accept your request, you can start an end-to-end encrypted conversation.</p>
+                        <div class="add-contact-form">
+                            <div class="contacts-input-wrapper">
+                                <input type="text" id="contacts-contact-input" class="contacts-contact-input" placeholder="Enter contact string..." maxlength="200">
+                                <button id="contacts-send-btn" class="contacts-send-arrow" title="Send request">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" class="arrow-icon">
+                                        <path d="M438.6 278.6c12.5-12.5 12.5-32.8 0-45.3l-160-160c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L338.8 224 32 224c-17.7 0-32 14.3-32 32s14.3 32 32 32l306.7 0L233.4 393.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l160-160z"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="box">
+                        <div class="box-buttons-container">
+                            <button class="box-button selected" id="inbox-btn">
+                                <div class="feh-border-mask">
+                                    <div class="feh-border-glow"></div>
+                                </div>
+                                Inbox
+                            </button>
+                            <button class="box-button" id="contact-requests-btn">
+                                <div class="feh-border-mask">
+                                    <div class="feh-border-glow"></div>
+                                </div>
+                                Contact requests
+                            </button>
+                        </div>
+                        <div id="inbox-view" class="box-content-view">
+                            <div class="inbox-container">
+                                <div class="inbox-chats-box">
+                                    <div id="inbox-chats-list" class="inbox-chats-list">
+                                        
+                                    </div>
+                                </div>
+                                <div id="inbox-chat-display" class="inbox-chat-display">
+                                    
+                                    <p class="inbox-chat-empty">Select a chat to view messages</p>
+                                    <div id="inbox-chat-messages-container" class="inbox-chat-messages-container hidden">
+                                        <div class="inbox-chat-header">
+                                            <h3 class="inbox-chat-user-small" id="inbox-chat-user-id"></h3>
+                                            <div class="inbox-chat-header-buttons">
+                                                <button type="button" id="inbox-chat-reload-btn" class="inbox-chat-reload-btn" title="Reload chat">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="reload-icon">
+                                                        <path d="M463.5 224H472c13.3 0 24-10.7 24-24V72c0-9.7-5.8-18.5-14.8-22.2s-19.3-1.7-26.2 5.2L413.4 96.6c-87.6-86.5-228.7-86.2-315.8 1c-87.5 87.5-87.5 229.3 0 316.8s229.3 87.5 316.8 0c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0c-62.5 62.5-163.8 62.5-226.3 0s-62.5-163.8 0-226.3c62.2-62.2 162.7-62.5 225.3-1L327 183c-6.9 6.9-8.9 17.2-5.2 26.2s12.5 14.8 22.2 14.8H463.5z"/>
+                                                    </svg>
+                                                </button>
+                                                <button type="button" id="inbox-chat-delete-btn" class="inbox-chat-delete-btn" title="Delete chat">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="delete-icon">
+                                                        <path d="M 10 2 L 9 3 L 3 3 L 3 5 L 4.109375 5 L 5.8925781 20.255859 L 5.8925781 20.263672 C 6.023602 21.250335 6.8803207 22 7.875 22 L 16.123047 22 C 17.117726 22 17.974445 21.250322 18.105469 20.263672 L 18.107422 20.255859 L 19.890625 5 L 21 5 L 21 3 L 15 3 L 14 2 L 10 2 z M 6.125 5 L 17.875 5 L 16.123047 20 L 7.875 20 L 6.125 5 z"></path>
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div id="inbox-chat-messages" class="inbox-chat-messages">
+                                            
+                                        </div>
+                                        <div class="inbox-chat-input-container">
+                                            <input type="file" id="inbox-chat-file-input" class="inbox-chat-file-input" accept="*/*" style="display: none;">
+                                            <button type="button" id="inbox-chat-upload-btn" class="inbox-chat-upload-btn" title="Upload file">
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" class="plus-icon">
+                                                    <path d="M256 80c0-17.7-14.3-32-32-32s-32 14.3-32 32V224H48c-17.7 0-32 14.3-32 32s14.3 32 32 32H192V432c0 17.7 14.3 32 32 32s32-14.3 32-32V288H400c17.7 0 32-14.3 32-32s-14.3-32-32-32H256V80z"/>
+                                                </svg>
+                                            </button>
+                                            <input type="text" id="inbox-chat-input" class="inbox-chat-input" placeholder="Type a message..." maxlength="1000">
+                                            <button type="button" id="inbox-chat-send-btn" class="inbox-chat-send-btn" title="Send message">
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" class="arrow-icon">
+                                                    <path d="M438.6 278.6c12.5-12.5 12.5-32.8 0-45.3l-160-160c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L338.8 224 32 224c-17.7 0-32 14.3-32 32s14.3 32 32 32l306.7 0L233.4 393.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l160-160z"/>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="contact-requests-view" class="box-content-view hidden">
+                            <div class="contact-requests-container">
+                                <div class="contact-request-box">
+                                    <h3 class="contact-request-title">Received requests</h3>
+                                    <p class="contact-request-description">Contact requests you've received from other users. You can accept or reject them.</p>
+                                    <div class="contact-requests-list-box">
+                                        <div id="received-requests-list" class="contact-requests-list">
+                                            <p class="contact-request-empty">No requests received yet</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="contact-request-box">
+                                    <h3 class="contact-request-title">Sent requests</h3>
+                                    <p class="contact-request-description">Contact requests you've sent to other users. They're waiting for a response.</p>
+                                    <div class="contact-requests-list-box">
+                                        <div id="sent-requests-list" class="contact-requests-list">
+                                            <p class="contact-request-empty">No sent requests found</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        
+        <div id="chat-view" class="view hidden">
+            <div class="view-header">
+                <h1 id="chat-title">Chat</h1>
+                <button id="back-to-contacts-btn" class="btn btn-secondary">Back</button>
+            </div>
+            
+            <div class="chat-content">
+                <div id="messages-container" class="messages-container">
+                    <div id="messages-list" class="messages-list">
+                        <p class="empty-state">No messages yet</p>
+                    </div>
+                </div>
+                
+                <div class="message-input-container">
+                    <input type="text" id="message-input" placeholder="Type a message..." class="input" maxlength="1000">
+                    <button id="send-message-btn" class="btn btn-primary">Send</button>
+                </div>
+            </div>
+        </div>
+
+        
+        <div id="settings-view" class="view hidden">
+            <div class="settings-content">
+                <div class="settings-boxes-section">
+                    <div class="box">
+                        <h3 class="box-title">Account settings</h3>
+                        <p class="box-description">Export your account to back it up or transfer it to another device. Import an account to restore your data from a backup. If someone gets access to your account seed, they can decrypt your messages and access your data.</p>
+                        <div class="settings-buttons-container">
+                            <button class="box-button" id="import-account-btn">Import account</button>
+                            <button class="box-button" id="export-account-btn">Export account</button>
+                        </div>
+                    </div>
+                    <div class="box">
+                        <h3 class="box-title">Auto-delete settings</h3>
+                        <p class="box-description">Messages are stored in an encrypted format on the server, allowing you to retrieve them after page reloads. Configure how long messages should be kept before being automatically deleted. Select an option from down below. </p>
+                        <div class="settings-auto-delete-container">
+                            <div class="settings-auto-delete-buttons">
+                                <button class="box-button auto-delete-btn selected" data-duration="off">Off</button>
+                                <button class="box-button auto-delete-btn" data-duration="1">1d</button>
+                                <button class="box-button auto-delete-btn" data-duration="7">7d</button>
+                                <button class="box-button auto-delete-btn" data-duration="30">30d</button>
+                                <button class="box-button auto-delete-btn" data-duration="60">60d</button>
+                                <button class="box-button auto-delete-btn" data-duration="90">90d</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="box">
+                        <h3 class="box-title">Interface settings</h3>
+                        <p class="box-description">Select which theme should be used for the webapp interface. Information like this can fingerprint you and make it easier for third parties to identify you, for maximum anonymity leave this on the default dark theme.</p>
+                        <div class="settings-theme-container">
+                            <div class="settings-theme-buttons">
+                                <button class="box-button theme-btn selected" data-theme="dark">Dark theme</button>
+                                <button class="box-button theme-btn" data-theme="light">Light theme</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="box">
+                        <h3 class="box-title">Identity reset</h3>
+                        <p class="box-description">You can permanently delete all information about your account and reset your identity by clicking the button below. This action cannot be undone and will delete all your messages, contacts, and account data.</p>
+                        <div class="settings-buttons-container">
+                            <button class="box-button" id="delete-my-data-btn">Delete myself</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    
+    <script src="js/storage.js"></script>
+    <script src="js/crypto.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/ws.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
+
