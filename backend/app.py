@@ -1463,12 +1463,12 @@ def serve_static(path):
         return jsonify({'error': 'Invalid path'}), 400
     return send_from_directory(frontend_dir, path)
 
-if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
+with app.app_context():
+    db.create_all()
+    cleanup_old_messages()
+    cleanup_old_nonces()
 
-        cleanup_old_messages()
-        cleanup_old_nonces()
+if __name__ == '__main__':
     host = os.environ.get('FLASK_HOST', '0.0.0.0')
     port = int(os.environ.get('PORT', os.environ.get('FLASK_PORT', '3000')))
     app.run(debug=False, host=host, port=port)
