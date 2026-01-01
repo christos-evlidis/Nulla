@@ -48,6 +48,13 @@ body {
     background: #0e0e0e;
     min-height: 100vh;
     color: #fff;
+    max-width: 1000px;
+    margin: 0 auto;
+    box-sizing: border-box;
+    overflow-x: hidden;
+    overflow-y: auto;
+    transition: background-color 0.2s;
+    -ms-overflow-style: none;
 }
 
 .mobile-only-message {
@@ -67,15 +74,16 @@ body {
     .mobile-message-content {
         text-align: center;
         max-width: 500px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     }
     
     .error-code {
         font-size: 120px;
         font-weight: bold;
-        color: #ff4444;
+        color: #fff;
         line-height: 1;
         margin-bottom: 1rem;
-        text-shadow: 0 0 20px rgba(255, 68, 68, 0.5);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     }
     
     .mobile-title {
@@ -83,25 +91,20 @@ body {
         font-weight: 600;
         color: #fff;
         margin-bottom: 1rem;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     }
     
     .mobile-description {
         font-size: 18px;
         color: #aaa;
         line-height: 1.6;
+        max-width: 300px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     }
     
     body > *:not(.mobile-only-message) {
         display: none !important;
     }
-}
-    max-width: 1000px;
-    margin: 0 auto;
-    box-sizing: border-box;
-    overflow-x: hidden;
-    overflow-y: auto;
-    transition: background-color 0.2s;
-    -ms-overflow-style: none; 
 }
 
 body.nav-hovered {
