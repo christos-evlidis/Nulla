@@ -1,4 +1,6 @@
-
+# Gevent must be patched first so one worker can handle WebSockets + HTTP concurrently
+from gevent import monkey
+monkey.patch_all()
 
 from flask import Flask, request, jsonify, send_from_directory
 from flask_sqlalchemy import SQLAlchemy

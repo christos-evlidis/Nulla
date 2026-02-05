@@ -57,6 +57,24 @@ This project is designed to protect against:
 
 ---
 
+## Deploying on Render
+
+Use **one gevent worker** so the same process can handle WebSockets and HTTP at once (otherwise one open WebSocket blocks all API and /logs traffic).
+
+**Start command** (Root Directory = `backend`):
+
+```bash
+gunicorn -k gevent -w 1 --worker-connections 50 --timeout 120 --bind 0.0.0.0:$PORT app:app
+```
+
+- `-k gevent` — one worker can serve many connections concurrently (no blocking).
+- `--worker-connections 50` — up to 50 concurrent connections per worker.
+- `--timeout 120` — avoid killing the worker while WebSockets are idle.
+
+For multiple Render instances, set **REDIS_URL** so presence and notifications work across instances.
+
+---
+
 ## Installation & Usage
 
 1. Open the [Nulla web app](https://nulla.onrender.com/).
