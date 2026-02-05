@@ -416,6 +416,19 @@ def get_chat_id_from_users(userA, userB):
     return f"{sorted_users[0]}_{sorted_users[1]}"
 
 
+def get_other_user_from_chat_id(chat_id, current_user_id):
+    """Parse chatId (userA_userB) and return the other user, or None if invalid."""
+    if not chat_id:
+        return None
+    parts = chat_id.split('_')
+    for p in parts:
+        if p == current_user_id:
+            continue
+        if p:
+            return p
+    return None
+
+
 @app.route('/api/contacts/request', methods=['POST'])
 @require_auth
 def send_contact_request():
@@ -1295,6 +1308,8 @@ def establish_chat():
             if pending_request:
                 otherUserId = pending_request.toUserId if pending_request.fromUserId == userId else pending_request.fromUserId
         
+        if not otherUserId:
+            otherUserId = get_other_user_from_chat_id(chatId, userId)
         if not otherUserId:
             return jsonify({'error': 'Could not determine other user from requests'}), 400
         
