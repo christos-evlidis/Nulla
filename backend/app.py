@@ -11,9 +11,26 @@ import secrets
 import json
 import base64
 import uuid
+import threading
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 import jwt
+
+# Optional Redis for cross-instance presence (e.g. Render with multiple instances)
+_redis_url = os.environ.get('REDIS_URL') or ''
+_redis_client = None
+_redis_enabled = False
+if _redis_url:
+    try:
+        import redis
+        _redis_client = redis.from_url(_redis_url)
+        _redis_client.ping()
+        _redis_enabled = True
+    except Exception:
+        pass
+
+REDIS_ONLINE_KEY = 'nulla:online_users'
+REDIS_WS_CHAN_PREFIX = 'nulla:ws:user:'
 
 
 app = Flask(__name__)
@@ -534,7 +551,7 @@ def accept_contact_request(requestId):
         
 
         fromUserId = contact_request.fromUserId
-        if fromUserId not in active_connections:
+        if not _is_user_online(fromUserId):
             return jsonify({'error': 'Other user is not online. Key exchange requires both users to be connected.'}), 400
         
 
@@ -542,16 +559,14 @@ def accept_contact_request(requestId):
         
         if reverse_request:
 
-
-            if fromUserId in active_connections:
-                active_connections[fromUserId].send(json.dumps({
-                    'type': 'contact_request_accepted',
-                    'chatId': chatId,
-                    'initiator': userId,
-                    'requestId': requestId,
-                    'reverseRequestId': reverse_request.requestId,
-                    'message': 'Mutual request detected - initiate key exchange'
-                }))
+            _send_to_user(fromUserId, {
+                'type': 'contact_request_accepted',
+                'chatId': chatId,
+                'initiator': userId,
+                'requestId': requestId,
+                'reverseRequestId': reverse_request.requestId,
+                'message': 'Mutual request detected - initiate key exchange'
+            })
             
             return jsonify({
                 'ok': True,
@@ -563,13 +578,12 @@ def accept_contact_request(requestId):
             })
         
 
-        if fromUserId in active_connections:
-            active_connections[fromUserId].send(json.dumps({
-                'type': 'contact_request_accepted',
-                'chatId': chatId,
-                'initiator': userId,
-                'requestId': requestId
-            }))
+        _send_to_user(fromUserId, {
+            'type': 'contact_request_accepted',
+            'chatId': chatId,
+            'initiator': userId,
+            'requestId': requestId
+        })
         
         return jsonify({
             'ok': True,
@@ -640,8 +654,69 @@ def get_chats():
         return jsonify({'error': str(e)}), 500
 
 
+def _is_user_online(user_id):
+    """True if user has an active WebSocket (this process or, with Redis, any process)."""
+    if user_id in active_connections:
+        return True
+    if _redis_enabled and _redis_client:
+        try:
+            return _redis_client.sismember(REDIS_ONLINE_KEY, user_id)
+        except Exception:
+            pass
+    return False
 
+
+def _send_to_user(user_id, payload_dict):
+    """Send a JSON message to user's WebSocket (local or via Redis pub/sub)."""
+    if user_id in active_connections:
+        active_connections[user_id].send(json.dumps(payload_dict))
+        return
+    if _redis_enabled and _redis_client:
+        try:
+            _redis_client.publish(REDIS_WS_CHAN_PREFIX + user_id, json.dumps(payload_dict))
+        except Exception:
+            pass
+
+
+# In-memory map of userId -> WebSocket. With Redis, "online" is shared across instances.
 active_connections = {}
+_user_pubsubs = {}
+_user_pubsub_stop = {}
+
+
+def _redis_subscriber_thread(user_id, ws):
+    """Listen on Redis channel for this user and forward messages to ws."""
+    if not _redis_url:
+        return
+    pubsub = None
+    chan = REDIS_WS_CHAN_PREFIX + user_id
+    try:
+        import redis
+        r = redis.from_url(_redis_url)
+        pubsub = r.pubsub()
+        pubsub.subscribe(chan)
+        _user_pubsubs[user_id] = pubsub
+        for msg in pubsub.listen():
+            if msg['type'] == 'message':
+                try:
+                    ws.send(msg['data'].decode('utf-8') if isinstance(msg['data'], bytes) else msg['data'])
+                except Exception:
+                    break
+            if msg['type'] == 'unsubscribe':
+                break
+            if _user_pubsub_stop.get(user_id):
+                break
+    except Exception:
+        pass
+    finally:
+        if pubsub:
+            try:
+                pubsub.unsubscribe(chan)
+                pubsub.close()
+            except Exception:
+                pass
+        _user_pubsubs.pop(user_id, None)
+        _user_pubsub_stop.pop(user_id, None)
 
 
 @sock.route('/ws')
@@ -662,6 +737,13 @@ def ws_handler(ws):
     
     userId = payload.get('userId')
     active_connections[userId] = ws
+    if _redis_enabled and _redis_client:
+        try:
+            _redis_client.sadd(REDIS_ONLINE_KEY, userId)
+        except Exception:
+            pass
+        t = threading.Thread(target=_redis_subscriber_thread, args=(userId, ws), daemon=True)
+        t.start()
     
 
     ws.send(json.dumps({'type': 'connected', 'userId': userId}))
@@ -701,7 +783,18 @@ def ws_handler(ws):
     except:
         pass
     finally:
-
+        if _redis_enabled and _redis_client:
+            try:
+                _redis_client.srem(REDIS_ONLINE_KEY, userId)
+            except Exception:
+                pass
+            _user_pubsub_stop[userId] = True
+            pubsub = _user_pubsubs.get(userId)
+            if pubsub:
+                try:
+                    pubsub.unsubscribe(REDIS_WS_CHAN_PREFIX + userId)
+                except Exception:
+                    pass
         if userId in active_connections:
             del active_connections[userId]
 
@@ -833,7 +926,7 @@ def handle_contact_request_response_ws(ws, userId, data):
         
 
         fromUserId = contact_request.fromUserId
-        if fromUserId not in active_connections:
+        if not _is_user_online(fromUserId):
             ws.send(json.dumps({
                 'type': 'error',
                 'message': 'Other user is not online. Key exchange requires both users to be connected.'
@@ -845,18 +938,14 @@ def handle_contact_request_response_ws(ws, userId, data):
         
         if reverse_request:
 
-
-            if fromUserId in active_connections:
-                sender_ws = active_connections[fromUserId]
-                sender_ws.send(json.dumps({
-                    'type': 'contact_request_accepted',
-                    'chatId': chatId,
-                    'initiator': userId,
-                    'requestId': requestId,
-                    'reverseRequestId': reverse_request.requestId,
-                    'message': 'Mutual request detected - initiate key exchange'
-                }))
-            
+            _send_to_user(fromUserId, {
+                'type': 'contact_request_accepted',
+                'chatId': chatId,
+                'initiator': userId,
+                'requestId': requestId,
+                'reverseRequestId': reverse_request.requestId,
+                'message': 'Mutual request detected - initiate key exchange'
+            })
 
             ws.send(json.dumps({
                 'type': 'contact_request_accepted',
@@ -867,16 +956,12 @@ def handle_contact_request_response_ws(ws, userId, data):
                 'message': 'Mutual request detected - initiate key exchange'
             }))
         else:
-
-            if fromUserId in active_connections:
-                sender_ws = active_connections[fromUserId]
-                sender_ws.send(json.dumps({
-                    'type': 'contact_request_accepted',
-                    'chatId': chatId,
-                    'initiator': userId,
-                    'requestId': requestId
-                }))
-            
+            _send_to_user(fromUserId, {
+                'type': 'contact_request_accepted',
+                'chatId': chatId,
+                'initiator': userId,
+                'requestId': requestId
+            })
 
             ws.send(json.dumps({
                 'type': 'contact_request_accepted',
@@ -891,18 +976,15 @@ def handle_contact_request_response_ws(ws, userId, data):
         db.session.commit()
         
 
-        if contact_request.fromUserId in active_connections:
-            sender_ws = active_connections[contact_request.fromUserId]
-            sender_ws.send(json.dumps({
-                'type': 'contact_request_rejected',
-                'requestId': requestId
-            }))
-        
+        _send_to_user(contact_request.fromUserId, {
+            'type': 'contact_request_rejected',
+            'requestId': requestId
+        })
 
-    ws.send(json.dumps({
-        'type': 'contact_request_rejected',
-        'requestId': requestId
-    }))
+        ws.send(json.dumps({
+            'type': 'contact_request_rejected',
+            'requestId': requestId
+        }))
 
 
 def handle_dh_init_ws(ws, fromUserId, data):
