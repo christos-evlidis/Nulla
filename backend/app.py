@@ -1,4 +1,6 @@
-
+# Gevent must be patched first so one worker can handle WebSockets + HTTP concurrently
+from gevent import monkey
+monkey.patch_all()
 
 from flask import Flask, request, jsonify, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
@@ -16,18 +18,28 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 import jwt
 
-# Optional Redis for cross-instance presence (e.g. Render with multiple instances)
+# Optional Redis for cross-instance presence (e.g. Render with multiple instances).
+# Client is created lazily per worker so each gunicorn worker has its own connection
+# (shared connection after fork is broken).
 _redis_url = os.environ.get('REDIS_URL') or ''
 _redis_client = None
-_redis_enabled = False
-if _redis_url:
-    try:
-        import redis
-        _redis_client = redis.from_url(_redis_url)
-        _redis_client.ping()
-        _redis_enabled = True
-    except Exception:
-        pass
+_redis_enabled = bool(_redis_url)
+
+
+def _get_redis_client():
+    """Return Redis client, creating one per process (per gunicorn worker)."""
+    global _redis_client
+    if not _redis_url:
+        return None
+    if _redis_client is None:
+        try:
+            import redis
+            _redis_client = redis.from_url(_redis_url)
+            _redis_client.ping()
+        except Exception:
+            return None
+    return _redis_client
+
 
 REDIS_ONLINE_KEY = 'nulla:online_users'
 REDIS_WS_CHAN_PREFIX = 'nulla:ws:user:'
@@ -349,11 +361,15 @@ def auth_verify():
         return jsonify({'error': str(e)}), 500
 
 
+# Separator for chatId (userA::userB). Must not appear in userIds (base64url can use _).
+CHAT_ID_SEP = '::'
+
+
 def create_chat_and_delete_requests(userA, userB, request1, request2=None):
     
 
     sorted_users = sorted([userA, userB])
-    chatId = f"{sorted_users[0]}_{sorted_users[1]}"
+    chatId = f"{sorted_users[0]}{CHAT_ID_SEP}{sorted_users[1]}"
     
 
     request1_id = request1.requestId if request1 else None
@@ -387,7 +403,21 @@ def create_chat_and_delete_requests(userA, userB, request1, request2=None):
 def get_chat_id_from_users(userA, userB):
     
     sorted_users = sorted([userA, userB])
-    return f"{sorted_users[0]}_{sorted_users[1]}"
+    return f"{sorted_users[0]}{CHAT_ID_SEP}{sorted_users[1]}"
+
+
+def get_other_user_from_chat_id(chat_id, current_user_id):
+    """Parse chatId (userA::userB or legacy userA_userB) and return the other user, or None if invalid."""
+    if not chat_id:
+        return None
+    sep = CHAT_ID_SEP if CHAT_ID_SEP in chat_id else '_'
+    parts = chat_id.split(sep)
+    for p in parts:
+        if p == current_user_id:
+            continue
+        if p:
+            return p
+    return None
 
 
 @app.route('/api/contacts/request', methods=['POST'])
@@ -424,7 +454,7 @@ def send_contact_request():
         
 
         userA, userB = sorted([fromUserId, toUserId])
-        chatId = f"{userA}_{userB}"
+        chatId = f"{userA}{CHAT_ID_SEP}{userB}"
         existing_chat = Chat.query.filter_by(chatId=chatId).first()
         
         if existing_chat:
@@ -658,9 +688,10 @@ def _is_user_online(user_id):
     """True if user has an active WebSocket (this process or, with Redis, any process)."""
     if user_id in active_connections:
         return True
-    if _redis_enabled and _redis_client:
+    r = _get_redis_client()
+    if r:
         try:
-            return _redis_client.sismember(REDIS_ONLINE_KEY, user_id)
+            return r.sismember(REDIS_ONLINE_KEY, user_id)
         except Exception:
             pass
     return False
@@ -671,9 +702,10 @@ def _send_to_user(user_id, payload_dict):
     if user_id in active_connections:
         active_connections[user_id].send(json.dumps(payload_dict))
         return
-    if _redis_enabled and _redis_client:
+    r = _get_redis_client()
+    if r:
         try:
-            _redis_client.publish(REDIS_WS_CHAN_PREFIX + user_id, json.dumps(payload_dict))
+            r.publish(REDIS_WS_CHAN_PREFIX + user_id, json.dumps(payload_dict))
         except Exception:
             pass
 
@@ -737,9 +769,10 @@ def ws_handler(ws):
     
     userId = payload.get('userId')
     active_connections[userId] = ws
-    if _redis_enabled and _redis_client:
+    r = _get_redis_client()
+    if r:
         try:
-            _redis_client.sadd(REDIS_ONLINE_KEY, userId)
+            r.sadd(REDIS_ONLINE_KEY, userId)
         except Exception:
             pass
         t = threading.Thread(target=_redis_subscriber_thread, args=(userId, ws), daemon=True)
@@ -783,9 +816,10 @@ def ws_handler(ws):
     except:
         pass
     finally:
-        if _redis_enabled and _redis_client:
+        r = _get_redis_client()
+        if r:
             try:
-                _redis_client.srem(REDIS_ONLINE_KEY, userId)
+                r.srem(REDIS_ONLINE_KEY, userId)
             except Exception:
                 pass
             _user_pubsub_stop[userId] = True
@@ -830,7 +864,7 @@ def handle_contact_request_ws(ws, fromUserId, data):
     
 
     userA, userB = sorted([fromUserId, toUserId])
-    chatId = f"{userA}_{userB}"
+    chatId = f"{userA}{CHAT_ID_SEP}{userB}"
     existing_chat = Chat.query.filter_by(chatId=chatId).first()
     
     if existing_chat:
@@ -1236,6 +1270,8 @@ def establish_chat():
             if pending_request:
                 otherUserId = pending_request.toUserId if pending_request.fromUserId == userId else pending_request.fromUserId
         
+        if not otherUserId:
+            otherUserId = get_other_user_from_chat_id(chatId, userId)
         if not otherUserId:
             return jsonify({'error': 'Could not determine other user from requests'}), 400
         
