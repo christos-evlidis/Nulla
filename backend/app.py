@@ -12,6 +12,8 @@ import json
 import base64
 import uuid
 import threading
+import sys
+from collections import deque
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 import jwt
@@ -31,6 +33,17 @@ if _redis_url:
 
 REDIS_ONLINE_KEY = 'nulla:online_users'
 REDIS_WS_CHAN_PREFIX = 'nulla:ws:user:'
+
+# In-app log buffer (last N lines), also printed to stderr
+_app_log_buffer = deque(maxlen=500)
+
+
+def _log_app(msg):
+    """Append a line to the in-app log buffer and to stderr."""
+    ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
+    line = f'[{ts}] {msg}'
+    _app_log_buffer.append(line)
+    print(line, file=sys.stderr, flush=True)
 
 
 app = Flask(__name__)
@@ -552,6 +565,15 @@ def accept_contact_request(requestId):
 
         fromUserId = contact_request.fromUserId
         if not _is_user_online(fromUserId):
+            debug = _online_check_debug(fromUserId)
+            _log_app(
+                'accept: requester not seen as online | '
+                f'fromUserId={fromUserId[:12]}... | '
+                f'in_this_process={debug["in_local"]} | '
+                f'in_redis={debug["in_redis"]} | '
+                f'redis_enabled={debug["redis_enabled"]} | '
+                f'connections_in_this_process={debug["local_connection_count"]}'
+            )
             return jsonify({'error': 'Other user is not online. Key exchange requires both users to be connected.'}), 400
         
 
@@ -666,6 +688,23 @@ def _is_user_online(user_id):
     return False
 
 
+def _online_check_debug(user_id):
+    """Return a dict explaining why user is (not) seen as online, for logging."""
+    in_local = user_id in active_connections
+    in_redis = False
+    if _redis_enabled and _redis_client:
+        try:
+            in_redis = _redis_client.sismember(REDIS_ONLINE_KEY, user_id)
+        except Exception:
+            pass
+    return {
+        'in_local': in_local,
+        'in_redis': in_redis,
+        'redis_enabled': _redis_enabled,
+        'local_connection_count': len(active_connections),
+    }
+
+
 def _send_to_user(user_id, payload_dict):
     """Send a JSON message to user's WebSocket (local or via Redis pub/sub)."""
     if user_id in active_connections:
@@ -737,6 +776,7 @@ def ws_handler(ws):
     
     userId = payload.get('userId')
     active_connections[userId] = ws
+    _log_app(f'ws_connect userId={userId[:12]}... connections_in_process={len(active_connections)}')
     if _redis_enabled and _redis_client:
         try:
             _redis_client.sadd(REDIS_ONLINE_KEY, userId)
@@ -797,6 +837,7 @@ def ws_handler(ws):
                     pass
         if userId in active_connections:
             del active_connections[userId]
+            _log_app(f'ws_disconnect userId={userId[:12]}... connections_in_process={len(active_connections)}')
 
 
 def handle_contact_request_ws(ws, fromUserId, data):
@@ -1524,6 +1565,80 @@ def cleanup_old_nonces():
     except Exception as e:
         db.session.rollback()
         return 0
+
+
+@app.route('/api/logs', methods=['GET'])
+def get_logs():
+    """Return recent app log lines for the in-app /logs page."""
+    lines = list(_app_log_buffer)
+    return jsonify({'lines': lines})
+
+
+@app.route('/logs', methods=['GET'])
+def logs_page():
+    """Serve the in-app logs viewer page."""
+    html = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logs — nulla</title>
+    <link rel="stylesheet" href="/css/main.css">
+    <style>
+        body { padding: 1rem 1.5rem; background: #0d0d0d; color: #e0e0e0; font-family: monospace; font-size: 13px; }
+        .logs-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem; }
+        .logs-title { font-size: 1.25rem; font-weight: 600; }
+        .logs-refresh { color: #888; font-size: 12px; }
+        .logs-pre { white-space: pre-wrap; word-break: break-all; margin: 0; padding: 1rem; background: #1a1a1a; border-radius: 6px; min-height: 200px; max-height: 70vh; overflow-y: auto; }
+        .logs-pre .line { display: block; }
+        .logs-pre .line.accept-fail { color: #f66; }
+        .logs-pre .line.ws-connect { color: #6c6; }
+        .logs-pre .line.ws-disconnect { color: #c96; }
+        a { color: #88c; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="logs-header">
+        <span class="logs-title">App logs</span>
+        <span class="logs-refresh">Auto-refresh every 3s</span>
+        <a href="/">← Back to app</a>
+    </div>
+    <pre id="logs-pre" class="logs-pre">Loading…</pre>
+    <script>
+        const pre = document.getElementById('logs-pre');
+        function escapeHtml(s) {
+            const div = document.createElement('div');
+            div.textContent = s;
+            return div.innerHTML;
+        }
+        function render(lines) {
+            if (!lines || lines.length === 0) {
+                pre.innerHTML = '<span class="line">No log entries yet.</span>';
+                return;
+            }
+            pre.innerHTML = lines.map(line => {
+                let cls = 'line';
+                if (line.includes('requester not seen as online')) cls += ' accept-fail';
+                else if (line.includes('ws_connect')) cls += ' ws-connect';
+                else if (line.includes('ws_disconnect')) cls += ' ws-disconnect';
+                return '<span class="' + cls + '">' + escapeHtml(line) + '</span>\\n';
+            }).join('');
+            pre.scrollTop = pre.scrollHeight;
+        }
+        function fetchLogs() {
+            fetch('/api/logs')
+                .then(r => r.json())
+                .then(d => render(d.lines || []))
+                .catch(() => { pre.textContent = 'Failed to load logs.'; });
+        }
+        fetchLogs();
+        setInterval(fetchLogs, 3000);
+    </script>
+</body>
+</html>'''
+    from flask import Response
+    return Response(html, mimetype='text/html')
 
 
 @app.route('/', methods=['GET'])
