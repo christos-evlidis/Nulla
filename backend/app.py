@@ -375,11 +375,15 @@ def auth_verify():
         return jsonify({'error': str(e)}), 500
 
 
+# Separator for chatId (userA::userB). Must not appear in userIds (base64url can use _).
+CHAT_ID_SEP = '::'
+
+
 def create_chat_and_delete_requests(userA, userB, request1, request2=None):
     
 
     sorted_users = sorted([userA, userB])
-    chatId = f"{sorted_users[0]}_{sorted_users[1]}"
+    chatId = f"{sorted_users[0]}{CHAT_ID_SEP}{sorted_users[1]}"
     
 
     request1_id = request1.requestId if request1 else None
@@ -413,14 +417,15 @@ def create_chat_and_delete_requests(userA, userB, request1, request2=None):
 def get_chat_id_from_users(userA, userB):
     
     sorted_users = sorted([userA, userB])
-    return f"{sorted_users[0]}_{sorted_users[1]}"
+    return f"{sorted_users[0]}{CHAT_ID_SEP}{sorted_users[1]}"
 
 
 def get_other_user_from_chat_id(chat_id, current_user_id):
-    """Parse chatId (userA_userB) and return the other user, or None if invalid."""
+    """Parse chatId (userA::userB or legacy userA_userB) and return the other user, or None if invalid."""
     if not chat_id:
         return None
-    parts = chat_id.split('_')
+    sep = CHAT_ID_SEP if CHAT_ID_SEP in chat_id else '_'
+    parts = chat_id.split(sep)
     for p in parts:
         if p == current_user_id:
             continue
@@ -463,7 +468,7 @@ def send_contact_request():
         
 
         userA, userB = sorted([fromUserId, toUserId])
-        chatId = f"{userA}_{userB}"
+        chatId = f"{userA}{CHAT_ID_SEP}{userB}"
         existing_chat = Chat.query.filter_by(chatId=chatId).first()
         
         if existing_chat:
@@ -902,7 +907,7 @@ def handle_contact_request_ws(ws, fromUserId, data):
     
 
     userA, userB = sorted([fromUserId, toUserId])
-    chatId = f"{userA}_{userB}"
+    chatId = f"{userA}{CHAT_ID_SEP}{userB}"
     existing_chat = Chat.query.filter_by(chatId=chatId).first()
     
     if existing_chat:

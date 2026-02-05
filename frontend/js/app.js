@@ -2,6 +2,26 @@
 
 let currentView = 'main';
 
+/** Parse chatId (userA::userB or legacy userA_userB) and return the other user's ID. */
+function getOtherUserIdFromChatId(chatId, currentUserId) {
+    if (!chatId || !currentUserId) return null;
+    if (chatId.includes('::')) {
+        const parts = chatId.split('::');
+        if (parts.length === 2) return parts[0] === currentUserId ? parts[1] : parts[0];
+        return null;
+    }
+    const parts = chatId.split('_');
+    if (parts.length === 2) return parts[0] === currentUserId ? parts[1] : parts[0];
+    for (let i = 0; i < parts.length; i++) {
+        const testId = parts.slice(0, i + 1).join('_');
+        if (testId === currentUserId) return parts.slice(i + 1).join('_');
+    }
+    for (let i = parts.length - 1; i >= 0; i--) {
+        const testId = parts.slice(i).join('_');
+        if (testId === currentUserId) return parts.slice(0, i).join('_');
+    }
+    return parts[0] || null;
+}
 
 const landingPage = document.getElementById('landing-page');
 const container = document.querySelector('.container');
@@ -1389,33 +1409,7 @@ async function handleAcceptRequest(requestId) {
             
 
             if (!otherUserId) {
-                const currentUserId = account.userId;
-                const parts = result.chatId.split('_');
-
-                let foundIndex = -1;
-                for (let i = 0; i < parts.length; i++) {
-                    const testId = parts.slice(0, i + 1).join('_');
-                    if (testId === currentUserId) {
-                        foundIndex = i;
-                        break;
-                    }
-                }
-                if (foundIndex >= 0) {
-                    otherUserId = parts.slice(foundIndex + 1).join('_');
-                } else {
-
-                    for (let i = parts.length - 1; i >= 0; i--) {
-                        const testId = parts.slice(i).join('_');
-                        if (testId === currentUserId) {
-                            otherUserId = parts.slice(0, i).join('_');
-                            break;
-                        }
-                    }
-
-                    if (!otherUserId) {
-                        otherUserId = parts[0];
-                    }
-                }
+                otherUserId = getOtherUserIdFromChatId(result.chatId, account.userId);
             }
             
             if (otherUserId) {
@@ -1459,36 +1453,8 @@ async function initiateKeyExchange(chatId, otherUserId) {
 
 
         if (!otherUserId) {
-            const currentUserId = account.userId;
-            const parts = chatId.split('_');
-
-            let foundIndex = -1;
-            for (let i = 0; i < parts.length; i++) {
-                const testId = parts.slice(0, i + 1).join('_');
-                if (testId === currentUserId) {
-                    foundIndex = i;
-                    break;
-                }
-            }
-            if (foundIndex >= 0) {
-                otherUserId = parts.slice(foundIndex + 1).join('_');
-            } else {
-
-
-                for (let i = parts.length - 1; i >= 0; i--) {
-                    const testId = parts.slice(i).join('_');
-                    if (testId === currentUserId) {
-                        otherUserId = parts.slice(0, i).join('_');
-                        break;
-                    }
-                }
-
-                if (!otherUserId) {
-                    otherUserId = parts[0];
-                }
-            }
+            otherUserId = getOtherUserIdFromChatId(chatId, account.userId);
         }
-        
         if (!otherUserId) {
             throw new Error('Could not determine otherUserId');
         }
@@ -2285,23 +2251,7 @@ window.app.onContactRequestAccepted = async function(message) {
         if (!otherUserId) {
             const account = storage.currentAccount || await storage.getAccount();
             if (account) {
-                const currentUserId = account.userId;
-                const parts = message.chatId.split('_');
-
-                let foundIndex = -1;
-                for (let i = 0; i < parts.length; i++) {
-                    const testId = parts.slice(0, i + 1).join('_');
-                    if (testId === currentUserId) {
-                        foundIndex = i;
-                        break;
-                    }
-                }
-                if (foundIndex >= 0) {
-                    otherUserId = parts.slice(foundIndex + 1).join('_');
-                } else {
-
-                    otherUserId = parts[0];
-                }
+                otherUserId = getOtherUserIdFromChatId(message.chatId, account.userId);
             }
         }
         
