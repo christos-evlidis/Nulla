@@ -1590,6 +1590,24 @@ def get_logs():
     return jsonify({'lines': lines})
 
 
+@app.route('/api/debug', methods=['GET'])
+def get_debug():
+    """Return connection counts for this process and Redis (for /logs page)."""
+    out = {
+        'connections_in_this_process': len(active_connections),
+        'redis_enabled': _redis_enabled,
+    }
+    r = _get_redis_client()
+    if r:
+        try:
+            out['redis_online_count'] = r.scard(REDIS_ONLINE_KEY)
+        except Exception as e:
+            out['redis_error'] = str(e)
+    else:
+        out['redis_online_count'] = None
+    return jsonify(out)
+
+
 @app.route('/logs', methods=['GET'])
 def logs_page():
     """Serve the in-app logs viewer page."""
@@ -1620,9 +1638,11 @@ def logs_page():
         <span class="logs-refresh">Auto-refresh every 3s</span>
         <a href="/">← Back to app</a>
     </div>
+    <div id="logs-debug" class="logs-debug" style="margin-bottom:0.5rem;font-size:12px;color:#888;"></div>
     <pre id="logs-pre" class="logs-pre">Loading…</pre>
     <script>
         const pre = document.getElementById('logs-pre');
+        const debugEl = document.getElementById('logs-debug');
         function escapeHtml(s) {
             const div = document.createElement('div');
             div.textContent = s;
@@ -1648,8 +1668,23 @@ def logs_page():
                 .then(d => render(d.lines || []))
                 .catch(() => { pre.textContent = 'Failed to load logs.'; });
         }
+        function fetchDebug() {
+            fetch('/api/debug')
+                .then(r => r.json())
+                .then(d => {
+                    let t = 'This process: ' + d.connections_in_this_process + ' WebSocket(s)';
+                    if (d.redis_enabled) {
+                        t += ' | Redis online set: ' + (d.redis_online_count != null ? d.redis_online_count : '?') + ' user(s)';
+                        if (d.redis_error) t += ' (error: ' + d.redis_error + ')';
+                    }
+                    debugEl.textContent = t;
+                })
+                .catch(() => { debugEl.textContent = 'Debug: failed to load'; });
+        }
         fetchLogs();
+        fetchDebug();
         setInterval(fetchLogs, 3000);
+        setInterval(fetchDebug, 3000);
     </script>
 </body>
 </html>'''
