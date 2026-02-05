@@ -18,18 +18,29 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 import jwt
 
-# Optional Redis for cross-instance presence (e.g. Render with multiple instances)
+# Optional Redis for cross-instance presence (e.g. Render with multiple instances).
+# Client is created lazily per worker so each gunicorn worker has its own connection
+# (shared connection after fork is broken).
 _redis_url = os.environ.get('REDIS_URL') or ''
 _redis_client = None
-_redis_enabled = False
-if _redis_url:
-    try:
-        import redis
-        _redis_client = redis.from_url(_redis_url)
-        _redis_client.ping()
-        _redis_enabled = True
-    except Exception:
-        pass
+_redis_enabled = bool(_redis_url)
+
+
+def _get_redis_client():
+    """Return Redis client, creating one per process (per gunicorn worker)."""
+    global _redis_client
+    if not _redis_url:
+        return None
+    if _redis_client is None:
+        try:
+            import redis
+            _redis_client = redis.from_url(_redis_url)
+            _redis_client.ping()
+        except Exception as e:
+            _log_app(f'redis connect failed: {e}')
+            return None
+    return _redis_client
+
 
 REDIS_ONLINE_KEY = 'nulla:online_users'
 REDIS_WS_CHAN_PREFIX = 'nulla:ws:user:'
@@ -680,9 +691,10 @@ def _is_user_online(user_id):
     """True if user has an active WebSocket (this process or, with Redis, any process)."""
     if user_id in active_connections:
         return True
-    if _redis_enabled and _redis_client:
+    r = _get_redis_client()
+    if r:
         try:
-            return _redis_client.sismember(REDIS_ONLINE_KEY, user_id)
+            return r.sismember(REDIS_ONLINE_KEY, user_id)
         except Exception:
             pass
     return False
@@ -692,9 +704,10 @@ def _online_check_debug(user_id):
     """Return a dict explaining why user is (not) seen as online, for logging."""
     in_local = user_id in active_connections
     in_redis = False
-    if _redis_enabled and _redis_client:
+    r = _get_redis_client()
+    if r:
         try:
-            in_redis = _redis_client.sismember(REDIS_ONLINE_KEY, user_id)
+            in_redis = r.sismember(REDIS_ONLINE_KEY, user_id)
         except Exception:
             pass
     return {
@@ -710,9 +723,10 @@ def _send_to_user(user_id, payload_dict):
     if user_id in active_connections:
         active_connections[user_id].send(json.dumps(payload_dict))
         return
-    if _redis_enabled and _redis_client:
+    r = _get_redis_client()
+    if r:
         try:
-            _redis_client.publish(REDIS_WS_CHAN_PREFIX + user_id, json.dumps(payload_dict))
+            r.publish(REDIS_WS_CHAN_PREFIX + user_id, json.dumps(payload_dict))
         except Exception:
             pass
 
@@ -777,11 +791,12 @@ def ws_handler(ws):
     userId = payload.get('userId')
     active_connections[userId] = ws
     _log_app(f'ws_connect userId={userId[:12]}... connections_in_process={len(active_connections)}')
-    if _redis_enabled and _redis_client:
+    r = _get_redis_client()
+    if r:
         try:
-            _redis_client.sadd(REDIS_ONLINE_KEY, userId)
-        except Exception:
-            pass
+            r.sadd(REDIS_ONLINE_KEY, userId)
+        except Exception as e:
+            _log_app(f'redis SADD failed on ws_connect: {e}')
         t = threading.Thread(target=_redis_subscriber_thread, args=(userId, ws), daemon=True)
         t.start()
     
@@ -823,9 +838,10 @@ def ws_handler(ws):
     except:
         pass
     finally:
-        if _redis_enabled and _redis_client:
+        r = _get_redis_client()
+        if r:
             try:
-                _redis_client.srem(REDIS_ONLINE_KEY, userId)
+                r.srem(REDIS_ONLINE_KEY, userId)
             except Exception:
                 pass
             _user_pubsub_stop[userId] = True
