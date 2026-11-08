@@ -1565,7 +1565,7 @@ def cleanup_old_nonces():
 @app.route('/', methods=['GET'])
 def index():
     
-    frontend_dir = os.path.join(os.path.dirname(__file__), '..', 'frontend', 'html')
+    frontend_dir = os.path.join(os.path.dirname(__file__), '..', 'src', 'html')
     return send_from_directory(frontend_dir, 'index.html')
 
 @app.route('/<path:path>', methods=['GET'])
@@ -1575,7 +1575,7 @@ def serve_static(path):
     if path.startswith('api/') or path.startswith('ws'):
         return jsonify({'error': 'Not found'}), 404
     
-    frontend_dir = os.path.join(os.path.dirname(__file__), '..', 'frontend')
+    frontend_dir = os.path.join(os.path.dirname(__file__), '..', 'src')
 
     if '..' in path or path.startswith('/'):
         return jsonify({'error': 'Invalid path'}), 400

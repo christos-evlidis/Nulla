@@ -1,7 +1,6 @@
-backend/dbs/
-*.db
-*.sqlite
-*.sqlite3
+.pmgr/node_modules/
+.pmgr/dist/
+project/backend/dbs/
 __pycache__/
 *.py[cod]
 *$py.class
@@ -10,11 +9,13 @@ __pycache__/
 env/
 venv/
 ENV/
-.venv
+.venv/
 *.log
 .DS_Store
 node_modules/
 *.nulla
 .env
 .env.local
-
+*.db
+*.sqlite
+*.sqlite3

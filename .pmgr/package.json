@@ -1,0 +1,20 @@
+{
+  "name": "nulla",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "watch": "bun build.js --watch",
+    "build": "bun build.js"
+  },
+  "dependencies": {
+    "@fortawesome/fontawesome-free": "^6.7.2"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "terser": "^5.51.2",
+    "vite": "^6.2.0"
+  }
+}
+
